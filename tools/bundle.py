@@ -8,6 +8,12 @@ string. All content edits happen on the *decoded* template; this tool
 extracts it to a plain HTML file and repacks it byte-safely, leaving the
 manifest and runtime untouched.
 
+On repack, the outer shell's <head> metadata (title, description,
+canonical, Open Graph and Twitter tags) is regenerated from the
+template's <helmet> block, between the <!-- head-meta --> markers. Link
+previews and crawlers that don't run JavaScript read the outer shell, so
+the template stays the single place to edit metadata.
+
 Usage:
   python3 tools/bundle.py extract <index.html> <template-out.html>
   python3 tools/bundle.py repack  <index.html> <template-in.html>
@@ -18,6 +24,15 @@ import sys
 
 BLOCK = re.compile(
     r'(<script type="__bundler/template">\s*)(".*?")(\s*</script>)', re.S
+)
+HELMET = re.compile(r"<helmet>(.*?)</helmet>", re.S)
+HEAD_META = re.compile(r"(<!-- head-meta -->)(.*?)(<!-- /head-meta -->)", re.S)
+META_TAG = re.compile(
+    r'<title>.*?</title>'
+    r'|<meta\s+name="(?:description|twitter:[^"]+)"[^>]*>'
+    r'|<meta\s+property="og:[^"]+"[^>]*>'
+    r'|<link\s+rel="canonical"[^>]*>',
+    re.S,
 )
 
 
@@ -31,6 +46,16 @@ def extract(index_path, out_path):
     print(f"extracted {len(template)} chars -> {out_path}")
 
 
+def head_meta(template):
+    m = HELMET.search(template)
+    if not m:
+        sys.exit("error: no <helmet> block in template")
+    tags = [t.group(0) for t in META_TAG.finditer(m.group(1))]
+    if not any(t.startswith("<title>") for t in tags):
+        sys.exit("error: template <helmet> has no <title>")
+    return "\n  " + "\n  ".join(tags) + "\n  "
+
+
 def repack(index_path, template_path):
     src = open(index_path, encoding="utf-8").read()
     template = open(template_path, encoding="utf-8").read()
@@ -42,6 +67,10 @@ def repack(index_path, template_path):
     new_src, n = BLOCK.subn(lambda m: m.group(1) + encoded + m.group(3), src)
     if n != 1:
         sys.exit(f"error: expected 1 template block, found {n}")
+    meta = head_meta(template)
+    new_src, n = HEAD_META.subn(lambda m: m.group(1) + meta + m.group(3), new_src, count=1)
+    if n != 1:
+        sys.exit("error: outer shell has no <!-- head-meta --> markers")
     # Round-trip sanity: the block must decode back to the exact input.
     check = json.loads(BLOCK.search(new_src).group(2))
     if check != template:

@@ -322,3 +322,5 @@ h2{max-width:13ch;margin-bottom:24px;font-size:clamp(38px,5.2vw,78px);font-weigh
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
   [data-reveal]{opacity:1;transform:none}
 }
+
+picture{display:contents}
